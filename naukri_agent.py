@@ -83,14 +83,12 @@ class NaukriAutoApplyAgent:
 
         params = {
             "k": keyword,
-            "experience": self.config.get("min_experience", 0),
         }
         if location and location.lower() != "remote":
             params["l"] = location
         freshness = self.config.get("freshness_days")
         if freshness:
             params["jobAge"] = freshness
-            params["freshness"] = freshness
         if page_num > 1:
             params["pageNo"] = page_num
 
@@ -746,12 +744,12 @@ class NaukriAutoApplyAgent:
     async def process_search_page(self, context: BrowserContext, main_page: Page, loc: str, max_apps: int) -> None:
         try:
             await main_page.wait_for_selector(
-                "div.srp-jobtuple-wrapper, article.jobTuple, div.cust-job-tuple, a[href*='job-listings']",
-                timeout=25000
+                "div.srp-jobtuple-wrapper, div.cust-job-tuple, [data-job-id]",
+                timeout=12000
             )
         except Exception:
             pass
-        await asyncio.sleep(2.0)
+        await asyncio.sleep(1.5)
 
         # Select job cards: Prioritize top wrapper to prevent nested duplicate elements
         cards = main_page.locator("div.srp-jobtuple-wrapper")
