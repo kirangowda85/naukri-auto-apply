@@ -1,0 +1,16 @@
+# Credentials & Sensitive Data
+settings.json
+*.env
+
+# SQLite Database & Session
+naukri_jobs.db
+naukri_browser_session/
+*.log
+
+# Python Cache
+__pycache__/
+*.pyc
+
+# Resumes (Personal data)
+resumes/*.pdf
+resumes/*.docx
