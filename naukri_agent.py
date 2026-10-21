@@ -923,6 +923,12 @@ class NaukriAutoApplyAgent:
         self.log(f"Keywords: {keywords}")
         self.log(f"Locations: {locations}")
         self.log(f"Target Applications: {max_apps} | Max Pages/Search: {max_pages}")
+        # Cloud / headless Linux auto-detection
+        is_headless_env = (sys.platform != "win32" and not os.environ.get("DISPLAY"))
+        if is_headless_env and not headless:
+            headless = True
+            self.log("[System] Headless environment detected (no display server). Forcing Headless mode.")
+
         if headless:
             self.log("Browser Mode: HEADLESS (Running in background)")
         else:
@@ -934,8 +940,9 @@ class NaukriAutoApplyAgent:
         # ── Self-healing: Clean any stale zombie Chrome processes from previous runs ──
         try:
             import subprocess
-            clean_cmd = 'Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like "*naukri_browser*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }'
-            subprocess.run(['powershell', '-Command', clean_cmd], capture_output=True, timeout=5)
+            if sys.platform == "win32":
+                clean_cmd = 'Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like "*naukri_browser*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }'
+                subprocess.run(['powershell', '-Command', clean_cmd], capture_output=True, timeout=5)
             # Remove stale lock files if left behind
             for lock_f in ['SingletonLock', 'SingletonCookie', 'SingletonSocket']:
                 lp = os.path.join(abs_u_dir, lock_f)
@@ -948,28 +955,36 @@ class NaukriAutoApplyAgent:
             pass
 
         # Allow Windows to bring new browser window to the active foreground
-        try:
-            import ctypes
-            ctypes.windll.user32.AllowSetForegroundWindow(-1)
-        except Exception:
-            pass
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                ctypes.windll.user32.AllowSetForegroundWindow(-1)
+            except Exception:
+                pass
 
         async with async_playwright() as p:
             launch_args = [
                 "--disable-blink-features=AutomationControlled",
-                "--start-maximized",
                 "--no-sandbox",
                 "--disable-dev-shm-usage",
-                "--window-position=0,0",
+                "--disable-gpu",
             ]
+            if not headless:
+                launch_args.extend(["--start-maximized", "--window-position=0,0"])
+
+            launch_kwargs = {
+                "user_data_dir": abs_u_dir,
+                "headless": headless,
+                "args": launch_args,
+            }
+            if not headless:
+                launch_kwargs["no_viewport"] = True
+            else:
+                launch_kwargs["viewport"] = {"width": 1920, "height": 1080}
+
             context = None
             try:
-                context = await p.chromium.launch_persistent_context(
-                    user_data_dir=abs_u_dir,
-                    headless=headless,
-                    args=launch_args,
-                    no_viewport=True,
-                )
+                context = await p.chromium.launch_persistent_context(**launch_kwargs)
                 if not headless:
                     self.log("🖥️ [SCREEN] Browser window is now OPEN and visible on your screen!")
                 else:
@@ -978,12 +993,7 @@ class NaukriAutoApplyAgent:
                 self.log(f"[Browser] Launch attempt note: {e1}. Retrying with clean session...")
                 try:
                     await asyncio.sleep(1.5)
-                    context = await p.chromium.launch_persistent_context(
-                        user_data_dir=abs_u_dir,
-                        headless=headless,
-                        args=launch_args,
-                        no_viewport=True,
-                    )
+                    context = await p.chromium.launch_persistent_context(**launch_kwargs)
                     self.log("🖥️ [SCREEN] Browser launched successfully on retry!")
                 except Exception as fatal_e:
                     self.log(f"[FATAL] Could not launch browser: {fatal_e}")

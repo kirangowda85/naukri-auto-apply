@@ -26,24 +26,38 @@ class ProfileBooster:
                     except Exception:
                         pass
 
+        is_headless_env = (sys.platform != "win32" and not os.environ.get("DISPLAY"))
+        if is_headless_env:
+            headless = True
+
         async with async_playwright() as p:
-            launch_args = ["--disable-blink-features=AutomationControlled", "--start-maximized"]
+            launch_args = [
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+            ]
+            if not headless:
+                launch_args.append("--start-maximized")
+
+            launch_kwargs = {
+                "user_data_dir": user_data_dir,
+                "headless": headless,
+                "args": launch_args,
+            }
+            if not headless:
+                launch_kwargs["no_viewport"] = True
+            else:
+                launch_kwargs["viewport"] = {"width": 1920, "height": 1080}
+
             context = None
             try:
-                context = await p.chromium.launch_persistent_context(
-                    user_data_dir=user_data_dir,
-                    channel="chrome",
-                    headless=headless,
-                    args=launch_args,
-                    no_viewport=True
-                )
+                if sys.platform == "win32":
+                    context = await p.chromium.launch_persistent_context(channel="chrome", **launch_kwargs)
+                else:
+                    context = await p.chromium.launch_persistent_context(**launch_kwargs)
             except Exception:
-                context = await p.chromium.launch_persistent_context(
-                    user_data_dir=user_data_dir,
-                    headless=headless,
-                    args=launch_args,
-                    no_viewport=True
-                )
+                context = await p.chromium.launch_persistent_context(**launch_kwargs)
 
             await context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
